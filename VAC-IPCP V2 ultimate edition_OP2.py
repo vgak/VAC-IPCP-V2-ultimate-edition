@@ -27,7 +27,7 @@ P0 = 8.0e-3 # W/cm^2 - обычная установка
 #P0 = 30.0e-3/(np.pi*1.5*1.5/4) # W/cm^2 - обычная установка
 #P0 = 12.5e-3/(np.pi*1.5*1.5/4) # W/cm^2 - установка 6485 
 inv = 1 # Если нужно инвертировать inv = -1
-gist =1 # 1 если надо усреднить, 0 если показать как есть
+gist =3 # 1 если надо усреднить, 0 если показать как есть
 
 
 plot_all = 0        # 1 если надо построить каждый график сам по себе, 0 чтобы не строить
@@ -142,6 +142,34 @@ def getvac(filename, inv, gist):
         for i in range(x.shape[0]):
             yy = xy[abs(xy[:,0] - x[i]) < 1e-3][:,1]
             vac[i,1] = yy.sum()/yy.shape[0]
+    elif gist in [2, 3]:
+        v_rounded = np.round(xy[:, 0], 3)
+        direction = 1 if gist == 2 else -1
+
+        sequences = []
+        current_seq = [xy[0]]
+        for i in range(1, len(xy)):
+            if direction * (v_rounded[i] - v_rounded[i - 1]) > 0:
+                current_seq.append(xy[i])
+            else:
+                if len(current_seq) > 1:
+                    sequences.append(np.array(current_seq))
+                current_seq = [xy[i]]
+        if len(current_seq) > 1:
+            sequences.append(np.array(current_seq))
+
+        # Объединяем все подходящие последовательности
+        combined = np.vstack(sequences)
+
+        # Сортировка по напряжению (не удаляя повторы)
+        sorted_indices = np.argsort(combined[:, 0])
+        combined_sorted = combined[sorted_indices]
+
+        vac = np.zeros((combined_sorted.shape[0], 3))
+        vac[:, 0] = combined_sorted[:, 0]
+        vac[:, 1] = combined_sorted[:, 1]
+        return vac
+
     else:
         vac = np.zeros((xy.shape[0], 3))
         vac[:,0] = xy[:,0]
