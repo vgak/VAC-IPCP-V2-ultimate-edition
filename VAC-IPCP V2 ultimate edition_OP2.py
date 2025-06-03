@@ -846,6 +846,7 @@ if (dark_light == 1) or (dark_light_log == 1) or (light_min_dark == 1):
                     plot_dark_light(dark, light, data[0][4]+'-'+data[0][5], pixel, 2)
 
 master_table = []
+string_avg = ['', '', '', '', '', '', '', '', '']
 if (dark_light_D == 1) or (RSD == 1):
     for pixel in pixels:
         if sizes[pixel] != 'COM':
@@ -873,6 +874,69 @@ if (dark_light_D == 1) or (RSD == 1):
                 if RSD == 1:
                     plot_RSD(data_to_plot, pixel+'-'+data[i][5], pixel)
                 master_table.append(string)
+# === Вычисление и добавление строки средних значений в master_table ===
+def to_float_safe(val):
+    try:
+        return float(val.replace(',', '.').replace('e', 'E'))
+    except:
+        return np.nan
+
+if len(master_table) > 0:
+    A_list = []
+    RdiffA_list = []
+    Ishort_per_A_list = []
+    Dmax_list = []
+    Uxx_list = []
+    S0_list = []
+
+    for row in master_table:
+        try:
+            L = (row[1]) * 1e-6
+            A = (L**2) * 1e4 # cm^2
+            RdiffA = to_float_safe(row[3])
+            inv_RdiffA = 1 / RdiffA if RdiffA != 0 else np.nan
+            Ishort_per_A = to_float_safe(row[7])
+            Dmax = to_float_safe(row[4])
+            Uxx = to_float_safe(row[5])
+            S0 = to_float_safe(row[8])
+
+            A_list.append(A)
+            RdiffA_list.append(RdiffA)
+            Ishort_per_A_list.append(Ishort_per_A)
+            Dmax_list.append(Dmax)
+            Uxx_list.append(Uxx)
+            S0_list.append(S0)
+
+        except Exception:
+            continue
+
+    # Средние значения
+    A_avg = np.nanmean(A_list)
+    L_avg = np.sqrt(A_avg) * 1e-2
+    inv_RdiffA_avg = np.nanmean([1/x if x != 0 else np.nan for x in RdiffA_list])
+    RdiffA_avg = 1 / inv_RdiffA_avg if inv_RdiffA_avg != 0 else np.nan
+    Rdiff_avg = RdiffA_avg / A_avg if A_avg != 0 else np.nan
+    Ishort_per_A_avg = np.nanmean(Ishort_per_A_list)
+    Ishort_avg = Ishort_per_A_avg * A_avg
+
+    Dmax_avg = np.nanmean(Dmax_list)
+    Uxx_avg  = np.nanmean(Uxx_list)
+    S0_avg   = np.nanmean(S0_list)
+
+    # Формируем строку
+    string_avg = [
+        'Средн.',
+        '%.1f' % (L_avg / 1e-6),
+        '%.2e' % (Rdiff_avg / 1e6),
+        '%.2e' % RdiffA_avg,
+        '%.2e' % Dmax_avg,
+        '%.2f' % Uxx_avg,
+        '%.2e' % Ishort_avg,
+        '%.2e' % Ishort_per_A_avg,
+        '%.2e' % S0_avg
+    ]
+
+    master_table.append(string_avg)
 master_table = np.array(master_table)
 #master_table = master_table[master_table[:,1].argsort()]
 np.savetxt('report/master_table.txt', master_table, delimiter='\t', fmt = '%s', encoding='utf-8')
