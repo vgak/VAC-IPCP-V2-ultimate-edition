@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 plt.rcParams['figure.max_open_warning'] = 128
 
-chip = 'OP2' # MD2', 'OP1', 'D500', ''MD1'
+chip = 'OP2' # 'MD2', 'OP1', 'D500', 'MD1'
 P0 = 8.0e-3 # W/cm^2 - обычная установка
 #P0 = 30.0e-3/(np.pi*1.5*1.5/4) # W/cm^2 - обычная установка
 #P0 = 12.5e-3/(np.pi*1.5*1.5/4) # W/cm^2 - установка 6485 
