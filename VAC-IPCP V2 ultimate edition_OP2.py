@@ -1,4 +1,4 @@
-import os
+﻿import os
 import numpy as np
 from scipy.optimize import curve_fit
 import matplotlib.pyplot as plt
@@ -22,12 +22,12 @@ warnings.filterwarnings("ignore", category=FutureWarning)
 
 plt.rcParams['figure.max_open_warning'] = 128
 
-chip = 'OP2' # 'OP1', 'D500', 'MD1'
+chip = 'OP2' # MD2', 'OP1', 'D500', ''MD1'
 P0 = 8.0e-3 # W/cm^2 - обычная установка
 #P0 = 30.0e-3/(np.pi*1.5*1.5/4) # W/cm^2 - обычная установка
 #P0 = 12.5e-3/(np.pi*1.5*1.5/4) # W/cm^2 - установка 6485 
 inv = 1 # Если нужно инвертировать inv = -1
-gist =3 # 1 если надо усреднить, 0 если показать как есть
+gist =3 # 0 если показать как есть, 1 если надо усреднить, 2 если прямой проход, 3 если обратный проход
 
 
 plot_all = 0        # 1 если надо построить каждый график сам по себе, 0 чтобы не строить
@@ -474,10 +474,10 @@ def plot_dark_light(dark, light, name, pixel, log):
 
 def doit(sample, P, L, dark, light):
     x = dark[:,0]
-    A = (L**2) * 1e4 # cm^2
+    A = (L**2) * 1e4  # cm^2
     vac = np.zeros((x.shape[0], 7))
     vac[:,0] = x
-    vac[:,1] =  dark[:,1] / A
+    vac[:,1] = dark[:,1] / A
     vac[:,2] = light[:,1] / A
     Id = dark[:,1]
     Il = light[:,1]
@@ -493,14 +493,39 @@ def doit(sample, P, L, dark, light):
         vac[i,4] = np.sqrt(4*kB*Tr/abs(Rd[i]) + 2*el*np.abs(Id[i]))
     In = vac[:,4]
     S  = np.abs(Il-Id) / (P * A)
-    D  = S * np.sqrt(A) / In
+    D = S * np.sqrt(A) / In
     vac[:,5] = S
     vac[:,6] = D
     Dmax   = D.max()
     Rdiff0 = Rd[abs(x) == abs(x).min()][0]
-    Ishort = Il[abs(x) == abs(x).min()][0] - Id[abs(x) == abs(x).min()][0]
-    S0 = S[abs(x) == abs(x).min()][0]
-    Uxx = x[np.where(abs(Il) == abs(Il).min())[0]][0]
+
+    # Фототок
+    Iph = Il - Id  # фототок в абсолютных единицах
+
+    # --------- Интерполяция Ishort ---------
+    try:
+        y1 = Iph[((x)>-0.25) & ((x)<0)].max()
+        y2 = Iph[((x)>0)     & ((x)<0.25)].min()
+        x1 = x[((x)>-0.25) & ((x)<0)].max()
+        x2 = x[((x)>0)     & ((x)<0.25)].min()
+        k = (y2-y1)/(x2-x1)
+        Ishort = y1 - k*x1
+    except:
+        Ishort = Il[abs(x) == abs(x).min()][0] - Id[abs(x) == abs(x).min()][0]
+
+    # --------- Интерполяция Uxx ---------
+    try:
+        y1 = Il[((Il)>-0.25) & ((Il)<0)].max()
+        y2 = Il[((Il)>0)     & ((Il)<0.25)].min()
+        x1 = x[((Il)>-0.25) & ((Il)<0)].max()
+        x2 = x[((Il)>0)     & ((Il)<0.25)].min()
+        k = (y2-y1)/(x2-x1)
+        b = y1-k*x1
+        Uxx = -b/k
+    except:
+        Uxx = x[np.where(abs(Il) == abs(Il).min())[0]][0]
+
+    S0  = np.abs(Ishort) / (P * A)
 
     header= f"""Sample:
     Columns:
@@ -514,7 +539,17 @@ def doit(sample, P, L, dark, light):
     #print(Dmax, Rdiff0, Ishort, Uxx)
     np.savetxt('report/'+sample + ".dat", vac, fmt="%+.6e", delimiter='\t', header=header)
 
-    return vac, [sample, round(L*1e6, 1), str('{:.2e}'.format(Rdiff0*1e-6)), str('{:.2e}'.format(Rdiff0*A)), str('{:.2e}'.format(Dmax)), str('{:.2f}'.format(round(Uxx, 2))), str('{:.2e}'.format(Ishort)), str('{:.2e}'.format(Ishort/A)), str('{:.2e}'.format(S0))]
+    return vac, [
+        sample,
+        round(L*1e6, 1),
+        str('{:.2e}'.format(Rdiff0*1e-6)),
+        str('{:.2e}'.format(Rdiff0*A)),
+        str('{:.2e}'.format(Dmax)),
+        str('{:.2f}'.format(round(Uxx, 2))),
+        str('{:.2e}'.format(Ishort)),
+        str('{:.2e}'.format(Ishort / A)),
+        str('{:.2e}'.format(S0))
+    ]
 
 def plot(vac, name, pixel):
     x = vac[:,0]
