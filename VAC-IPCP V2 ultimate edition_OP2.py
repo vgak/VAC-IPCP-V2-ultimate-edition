@@ -10,7 +10,6 @@ from docx.shared import Pt, Cm, Inches
 import base64
 from datetime import datetime
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_PARAGRAPH_ALIGNMENT
-from natsort import natsorted
 import matplotlib.pylab as pylab
 import matplotlib.colors as mcolors
 
@@ -19,6 +18,25 @@ from scipy.optimize import OptimizeWarning
 
 warnings.filterwarnings("ignore", category=OptimizeWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
+
+plt.rcParams['figure.max_open_warning'] = 128
+
+# Попытка импорта natsorted
+try:
+    from natsort import natsorted
+except (ImportError, ModuleNotFoundError):
+    print("Установка модуля natsort...")
+    import subprocess
+    import sys
+
+    def install(package):
+        subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+    # Устанавливаем natsort
+    install('natsort')
+
+    # Попытка импорта natsorted снова
+    from natsort import natsorted
 
 plt.rcParams['figure.max_open_warning'] = 128
 
@@ -472,12 +490,41 @@ def plot_dark_light(dark, light, name, pixel, log):
         ax1.set_ylabel(r"Плотность тока, {sfx}А / см$^2$".format(sfx=sfx3[int(yk/3)]))
         fig.savefig('report/'+'5_'+pixel+".png", bbox_inches='tight')
 
+def interpolate_Ishort(x, Il, Id):
+    # Фототок
+    Iph = Il - Id  # фототок в абсолютных единицах
+    # --------- Интерполяция Ishort ---------
+    try:
+        y1 = Iph[((x)>-0.25) & ((x)<0)].max()
+        y2 = Iph[((x)>0)     & ((x)<0.25)].min()
+        x1 = x[((x)>-0.25) & ((x)<0)].max()
+        x2 = x[((x)>0)     & ((x)<0.25)].min()
+        k = (y2-y1)/(x2-x1)
+        Ishort = y1 - k*x1
+    except:
+        Ishort = Il[abs(x) == abs(x).min()][0] - Id[abs(x) == abs(x).min()][0]
+    return Ishort
+
+def interpolate_Uxx(x, Il):
+    # --------- Интерполяция Uxx ---------
+    try:
+        y1 = Il[((Il)>-0.25) & ((Il)<0)].max()
+        y2 = Il[((Il)>0)     & ((Il)<0.25)].min()
+        x1 = x[((Il)>-0.25) & ((Il)<0)].max()
+        x2 = x[((Il)>0)     & ((Il)<0.25)].min()
+        k = (y2-y1)/(x2-x1)
+        b = y1-k*x1
+        Uxx = -b/k
+    except:
+        Uxx = x[np.where(abs(Il) == abs(Il).min())[0]][0]
+    return Uxx
+
 def doit(sample, P, L, dark, light):
     x = dark[:,0]
-    A = (L**2) * 1e4  # cm^2
+    A = (L**2) * 1e4 # cm^2
     vac = np.zeros((x.shape[0], 7))
     vac[:,0] = x
-    vac[:,1] = dark[:,1] / A
+    vac[:,1] =  dark[:,1] / A
     vac[:,2] = light[:,1] / A
     Id = dark[:,1]
     Il = light[:,1]
@@ -493,39 +540,14 @@ def doit(sample, P, L, dark, light):
         vac[i,4] = np.sqrt(4*kB*Tr/abs(Rd[i]) + 2*el*np.abs(Id[i]))
     In = vac[:,4]
     S  = np.abs(Il-Id) / (P * A)
-    D = S * np.sqrt(A) / In
+    D  = S * np.sqrt(A) / In
     vac[:,5] = S
     vac[:,6] = D
     Dmax   = D.max()
     Rdiff0 = Rd[abs(x) == abs(x).min()][0]
-
-    # Фототок
-    Iph = Il - Id  # фототок в абсолютных единицах
-
-    # --------- Интерполяция Ishort ---------
-    try:
-        y1 = Iph[((x)>-0.25) & ((x)<0)].max()
-        y2 = Iph[((x)>0)     & ((x)<0.25)].min()
-        x1 = x[((x)>-0.25) & ((x)<0)].max()
-        x2 = x[((x)>0)     & ((x)<0.25)].min()
-        k = (y2-y1)/(x2-x1)
-        Ishort = y1 - k*x1
-    except:
-        Ishort = Il[abs(x) == abs(x).min()][0] - Id[abs(x) == abs(x).min()][0]
-
-    # --------- Интерполяция Uxx ---------
-    try:
-        y1 = Il[((Il)>-0.25) & ((Il)<0)].max()
-        y2 = Il[((Il)>0)     & ((Il)<0.25)].min()
-        x1 = x[((Il)>-0.25) & ((Il)<0)].max()
-        x2 = x[((Il)>0)     & ((Il)<0.25)].min()
-        k = (y2-y1)/(x2-x1)
-        b = y1-k*x1
-        Uxx = -b/k
-    except:
-        Uxx = x[np.where(abs(Il) == abs(Il).min())[0]][0]
-
-    S0  = np.abs(Ishort) / (P * A)
+    Ishort = interpolate_Ishort(x, Il, Id)
+    S0 = np.abs(Ishort) / (P * A)
+    Uxx = interpolate_Uxx(x, Il)
 
     header= f"""Sample:
     Columns:
@@ -663,7 +685,6 @@ def plot(vac, name, pixel):
     fig.savefig('report/'+'6_'+pixel+".png", bbox_inches='tight')
 
 def plot_com(data):
-    sfx3 = ["", "к", "М", "Г", "Т", "ф", "п", "н", 'мк', "м"]
     params = {
         'legend.fontsize': 'medium',
         'axes.labelsize' : 'medium',
@@ -674,6 +695,9 @@ def plot_com(data):
     vac = data[0]
     fit_res = np.polyfit(vac[:,0], vac[:,1], 1)
     name = 'COM '+data[4]+'-'+data[5]+' '+data[6]
+
+    sfx3 = ["", "к", "М", "Г", "Т", "ф", "п", "н", 'мк', "м"]
+
     fig = plt.figure()
     plt.plot(vac[:,0], vac[:,1], c = 'blue', label = str('{:.2e}'.format(fit_res[0]))+' См / ' + str("{:.3g} {}".format((1/fit_res[0]) / (10 ** (int(floor(log10(abs(1/fit_res[0])))) // 3 * 3)), sfx3[int(floor(log10(abs(1/fit_res[0])))) // 3])) +'Ом')
     plt.plot(vac[:,0], fit_res[0]*vac[:,0]+fit_res[1],'--', c = 'blue')
@@ -690,7 +714,6 @@ def plot_RSD(vac, name, pixel):
     i_n =   vac[:,4]
     S =     vac[:,5]
     D =     vac[:,6]
-    sfx3 = ["", "к", "М", "Г", "Т", "ф", "п", "н", 'мк', "м"]
     params = {
         'legend.fontsize': 'medium',
         'axes.labelsize' : 'medium',
@@ -701,6 +724,8 @@ def plot_RSD(vac, name, pixel):
     xmax = max(abs(x.min()), abs(x.max()))
     
     xmin = -xmax
+
+    sfx3 = ["", "к", "М", "Г", "Т", "ф", "п", "н", 'мк', "м"]
 
     px = 1/plt.rcParams['figure.dpi']
     FW = 0.75*800
@@ -882,6 +907,12 @@ if (dark_light == 1) or (dark_light_log == 1) or (light_min_dark == 1):
 
 master_table = []
 string_avg = ['', '', '', '', '', '', '', '', '']
+A_list = []
+RdiffA_list = []
+Ishort_per_A_list = []
+Dmax_list = []
+Uxx_list = []
+S0_list = []
 if (dark_light_D == 1) or (RSD == 1):
     for pixel in pixels:
         if sizes[pixel] != 'COM':
@@ -909,42 +940,14 @@ if (dark_light_D == 1) or (RSD == 1):
                 if RSD == 1:
                     plot_RSD(data_to_plot, pixel+'-'+data[i][5], pixel)
                 master_table.append(string)
+                A_list.append((sizes[pixel]**2)*1e4)
+                RdiffA_list.append(data_to_plot[abs(data_to_plot[:,0])==abs(data_to_plot[:,0]).min(),3][0]*(sizes[pixel]**2)*1e4)
+                Ishort_per_A_list.append(interpolate_Ishort(data_to_plot[:,0],data_to_plot[:,2]*(sizes[pixel]**2)*1e4,data_to_plot[:,1]*(sizes[pixel]**2)*1e4)/((sizes[pixel]**2)*1e4))
+                Dmax_list.append(data_to_plot[:,6].max())
+                Uxx_list.append(interpolate_Uxx(data_to_plot[:,0],data_to_plot[:,2]*(sizes[pixel]**2)*1e4))
+                S0_list.append(np.abs(interpolate_Ishort(data_to_plot[:,0],data_to_plot[:,2]*(sizes[pixel]**2)*1e4,data_to_plot[:,1]*(sizes[pixel]**2)*1e4))/(P0*(sizes[pixel]**2)*1e4))
 # === Вычисление и добавление строки средних значений в master_table ===
-def to_float_safe(val):
-    try:
-        return float(val.replace(',', '.').replace('e', 'E'))
-    except:
-        return np.nan
-
 if len(master_table) > 0:
-    A_list = []
-    RdiffA_list = []
-    Ishort_per_A_list = []
-    Dmax_list = []
-    Uxx_list = []
-    S0_list = []
-
-    for row in master_table:
-        try:
-            L = (row[1]) * 1e-6
-            A = (L**2) * 1e4 # cm^2
-            RdiffA = to_float_safe(row[3])
-            inv_RdiffA = 1 / RdiffA if RdiffA != 0 else np.nan
-            Ishort_per_A = to_float_safe(row[7])
-            Dmax = to_float_safe(row[4])
-            Uxx = to_float_safe(row[5])
-            S0 = to_float_safe(row[8])
-
-            A_list.append(A)
-            RdiffA_list.append(RdiffA)
-            Ishort_per_A_list.append(Ishort_per_A)
-            Dmax_list.append(Dmax)
-            Uxx_list.append(Uxx)
-            S0_list.append(S0)
-
-        except Exception:
-            continue
-
     # Средние значения
     A_avg = np.nanmean(A_list)
     L_avg = np.sqrt(A_avg) * 1e-2
@@ -953,7 +956,6 @@ if len(master_table) > 0:
     Rdiff_avg = RdiffA_avg / A_avg if A_avg != 0 else np.nan
     Ishort_per_A_avg = np.nanmean(Ishort_per_A_list)
     Ishort_avg = Ishort_per_A_avg * A_avg
-
     Dmax_avg = np.nanmean(Dmax_list)
     Uxx_avg  = np.nanmean(Uxx_list)
     S0_avg   = np.nanmean(S0_list)
