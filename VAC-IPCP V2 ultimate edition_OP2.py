@@ -519,7 +519,7 @@ def interpolate_Uxx(x, Il):
         Uxx = x[np.where(abs(Il) == abs(Il).min())[0]][0]
     return Uxx
 
-def doit(sample, P, L, dark, light):
+def doit(sample, P, L, dark, light, dark_date_time, light_date_time):
     x = dark[:,0]
     A = (L**2) * 1e4 # cm^2
     vac = np.zeros((x.shape[0], 7))
@@ -543,11 +543,12 @@ def doit(sample, P, L, dark, light):
     D  = S * np.sqrt(A) / In
     vac[:,5] = S
     vac[:,6] = D
-    Dmax   = D.max()
     Rdiff0 = Rd[abs(x) == abs(x).min()][0]
+    Dmax   = D.max()
+    Uxx = interpolate_Uxx(x, Il)
     Ishort = interpolate_Ishort(x, Il, Id)
     S0 = np.abs(Ishort) / (P * A)
-    Uxx = interpolate_Uxx(x, Il)
+    Tmean = datetime.fromtimestamp(np.mean([dark_date_time.timestamp(), light_date_time.timestamp()]))
 
     header= f"""Sample:
     Columns:
@@ -570,7 +571,8 @@ def doit(sample, P, L, dark, light):
         str('{:.2f}'.format(round(Uxx, 2))),
         str('{:.2e}'.format(Ishort)),
         str('{:.2e}'.format(Ishort / A)),
-        str('{:.2e}'.format(S0))
+        str('{:.2e}'.format(S0)),
+        Tmean.strftime("%d.%m.%Y %H:%M")
     ]
 
 def plot(vac, name, pixel):
@@ -906,13 +908,14 @@ if (dark_light == 1) or (dark_light_log == 1) or (light_min_dark == 1):
                     plot_dark_light(dark, light, data[0][4]+'-'+data[0][5], pixel, 2)
 
 master_table = []
-string_avg = ['', '', '', '', '', '', '', '', '']
+string_avg = ['', '', '', '', '', '', '', '', '', '']
 A_list = []
 RdiffA_list = []
 Ishort_per_A_list = []
 Dmax_list = []
 Uxx_list = []
 S0_list = []
+Tmean_list = []
 if (dark_light_D == 1) or (RSD == 1):
     for pixel in pixels:
         if sizes[pixel] != 'COM':
@@ -924,17 +927,19 @@ if (dark_light_D == 1) or (RSD == 1):
                 if data[i][6] == 'dark':
                     b_dark = 1
                     dark = data[i][0]
+                    dark_date_time = datetime.strptime(data[i][1] + " " + data[i][2], "%Y-%m-%d %H-%M-%S")
                     break
             for i in range(len(data)):
                 if data[i][6] == 'light':
                     b_light = 1
                     light = data[i][0]
+                    light_date_time = datetime.strptime(data[i][1] + " " + data[i][2], "%Y-%m-%d %H-%M-%S")
                     break
             if (b_dark == 0) or (b_light == 0):
                 print('Неправильное число файлов, пиксель ', pixel)
                 pass
             else:
-                data_to_plot, string = doit(pixel+'-'+data[i][5], P0, sizes[pixel], dark, light)
+                data_to_plot, string = doit(pixel+'-'+data[i][5], P0, sizes[pixel], dark, light, dark_date_time, light_date_time)
                 if dark_light_D == 1:
                     plot(data_to_plot, pixel+'-'+data[i][5], pixel)
                 if RSD == 1:
@@ -946,6 +951,7 @@ if (dark_light_D == 1) or (RSD == 1):
                 Dmax_list.append(data_to_plot[:,6].max())
                 Uxx_list.append(interpolate_Uxx(data_to_plot[:,0],data_to_plot[:,2]*(sizes[pixel]**2)*1e4))
                 S0_list.append(np.abs(interpolate_Ishort(data_to_plot[:,0],data_to_plot[:,2]*(sizes[pixel]**2)*1e4,data_to_plot[:,1]*(sizes[pixel]**2)*1e4))/(P0*(sizes[pixel]**2)*1e4))
+                Tmean_list.append(datetime.fromtimestamp(np.mean([dark_date_time.timestamp(), light_date_time.timestamp()])))
 # === Вычисление и добавление строки средних значений в master_table ===
 if len(master_table) > 0:
     # Средние значения
@@ -959,6 +965,7 @@ if len(master_table) > 0:
     Dmax_avg = np.nanmean(Dmax_list)
     Uxx_avg  = np.nanmean(Uxx_list)
     S0_avg   = np.nanmean(S0_list)
+    Tmean_avg = datetime.fromtimestamp(np.nanmean([dt.timestamp() for dt in Tmean_list]))
 
     # Формируем строку
     string_avg = [
@@ -970,7 +977,8 @@ if len(master_table) > 0:
         '%.2f' % Uxx_avg,
         '%.2e' % Ishort_avg,
         '%.2e' % Ishort_per_A_avg,
-        '%.2e' % S0_avg
+        '%.2e' % S0_avg,
+        Tmean_avg.strftime("%d.%m.%Y %H:%M")
     ]
 
     master_table.append(string_avg)
@@ -1071,7 +1079,8 @@ for pic in os.listdir('report/'):
 if report[0] == 1:
     for i in range(master_table.shape[0]):
         row = doc.tables[0].add_row().cells
-        for j in range(master_table.shape[1]):
+        #for j in range(master_table.shape[1]):
+        for j in range(master_table.shape[1] - 1):  # не включаем последний столбец
             row[j].text = master_table[i,j]
             if i == master_table.shape[0] - 1:  # Если это последняя строка
                 row[j].paragraphs[0].runs[0].font.bold = True
@@ -1088,9 +1097,10 @@ else:
 
 for p in pixels:
     if sizes[p] != 'COM':
+        date_times = [datetime.strptime(entry[1] + " " + entry[2], "%Y-%m-%d %H-%M-%S") for entry in dat if entry[4] == p]
         para = doc.paragraphs[-1]
         r = para.add_run()
-        r.add_text('Пиксель '+p+', сторона '+str(round(sizes[p]*1e6, 2))+' мкм')
+        r.add_text('Пиксель '+p+', сторона '+str(round(sizes[p]*1e6, 2))+' мкм, '+datetime.fromtimestamp(np.mean([dt.timestamp() for dt in date_times])).strftime("%d.%m.%Y %H:%M"))
         r.font.size = Pt(12)
         para = doc.add_paragraph()
         r = para.add_run()
