@@ -8,7 +8,7 @@ from math import *
 from docx import Document
 from docx.shared import Pt, Cm, Inches
 import base64
-from datetime import datetime
+from datetime import datetime, date
 from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_PARAGRAPH_ALIGNMENT
 import matplotlib.pylab as pylab
 import matplotlib.colors as mcolors
@@ -994,7 +994,7 @@ def create_report(chip, name, date):
     docx_result.write(docx_64_decode)
     docx_result.close()
     
-    docx = Document('report/'+dat[0][3]+' '+datetime.strptime(dat[0][1]+' '+dat[0][2], '%Y-%m-%d %H-%M-%S').strftime('%Y.%m.%d') + ' Keithley.docx')
+    docx = Document('report/'+dat[0][3]+' '+datetime.strptime(dat[0][1], '%Y-%m-%d').date().strftime('%Y.%m.%d')+' Keithley.docx')
 
     docx.paragraphs[2].text = docx.paragraphs[2].text.replace('NAME', name)
     docx.paragraphs[2].runs[0].font.size = Pt(12)
@@ -1070,8 +1070,8 @@ def osc_array():
     dat2 = np.array(dat2)
     return(dat2)
 
-create_report(chip, dat[0][3], datetime.strptime(dat[0][1]+' '+dat[0][2], '%Y-%m-%d %H-%M-%S'))
-doc = Document('report/'+dat[0][3]+' '+datetime.strptime(dat[0][1]+' '+dat[0][2], '%Y-%m-%d %H-%M-%S').strftime('%Y.%m.%d')+' Keithley.docx')
+create_report(chip, dat[0][3], datetime.strptime(dat[0][1], '%Y-%m-%d').date())
+doc = Document('report/'+dat[0][3]+' '+datetime.strptime(dat[0][1], '%Y-%m-%d').date().strftime('%Y.%m.%d')+' Keithley.docx')
 rrr = np.array(report[1])
 
 pics = []
@@ -1166,4 +1166,4 @@ if report[3] == 1:
         r = para.add_run()
         r.add_picture('report/'+pic, width = Pt(450))
 
-doc.save('report/'+dat[0][3]+' '+datetime.strptime(dat[0][1]+' '+dat[0][2], '%Y-%m-%d %H-%M-%S').strftime('%Y.%m.%d') + ' Keithley.docx')
+doc.save('report/'+dat[0][3]+' '+datetime.strptime(dat[0][1], '%Y-%m-%d').date().strftime('%Y.%m.%d')+' Keithley.docx')
